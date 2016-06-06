@@ -33,7 +33,7 @@
  * LUA allocate before we say no.  This keeps LUA from crashing the system
  * when a memory hog LUA script is running.  Set to 0 for no limit.
  */
-#define LUA_MEM_MAX (1024 * 50)
+#define LUA_MEM_MAX (0)
 
 /*
  * These values dictate how the LUA garbage collector will behave.
