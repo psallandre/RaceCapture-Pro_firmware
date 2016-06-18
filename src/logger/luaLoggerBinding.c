@@ -175,6 +175,11 @@ void registerLuaLoggerBindings(lua_State *L)
     /* Timing info */
     lua_registerlight(L, "getUptime", lua_get_uptime);
     lua_registerlight(L, "getDateTime", lua_get_date_time);
+
+    //EvoX
+    lua_registerlight(L, "addDefaultEngineChannels", lua_AddDefaultEngineChannels);
+    lua_registerlight(L, "requestAndReadCAN", Lua_requestAndReadCAN);
+    lua_registerlight(L, "requestAndReadCANAndDecodeTephraV3", Lua_requestAndReadCANAndDecodeTephraV3);
 }
 
 ////////////////////////////////////////////////////
@@ -914,4 +919,272 @@ int Lua_SetVirtualChannelValue(lua_State *L)
         set_virtual_channel_value(id, value);
 
         return 0;
+}
+
+static int chan_id[30];
+static int chLoad        ;
+static int chRPM         ;
+static int chBoost       ;
+static int chIPW         ;
+static int chTiming      ;
+static int chKnockSum    ;
+static int chTPS         ;
+static int chAPP         ;
+static int chMAP         ;
+static int chBaro        ;
+static int chWGDC        ;
+static int chWGDCCorr    ;
+static int chECT         ;
+static int chIAT         ;
+static int chMAT         ;
+static int chSpeed       ;
+static int chKnockBase   ;
+static int chKnockFilter ;
+static int chSTFT        ;
+static int chLTFT        ;
+static int chLTFTIdle    ;
+static int chLTFTCruise  ;
+static int chMIVInAct    ;
+static int chMIVExAct    ;
+static int chMAFVolt     ;
+static int chLoadTiming  ;
+static int chLoadMAP     ;
+static int chLoadIMAP    ;
+static int chLoadMAF     ;
+static int chLoadChosen  ;
+int lua_AddDefaultEngineChannels(lua_State *L){
+    if (lua_gettop(L) != 2)
+        return incorrect_arguments(L);
+    unsigned short sampleRateLow = encodeSampleRate((unsigned short) lua_tointeger(L, 1));
+    unsigned short sampleRateHigh = encodeSampleRate((unsigned short) lua_tointeger(L, 2));
+
+    int channel_count = 30;
+    //label,units,min,max,sampleRate,precision,flags;
+    ChannelConfig cc[] ={
+        {"Load"       , "Load"  , 0    , 500  , sampleRateHigh, 1, 0},
+        {"RPM"        , "rpm"   , 0    , 10000, sampleRateHigh, 0, 0},
+        {"Boost"      , "Psig"  , -14.5, 43.5 , sampleRateHigh, 2, 0},
+        {"IPW"        , "ms"    , 0    , 25.5 , sampleRateHigh, 3, 0},
+        {"Timing"     , "deg"   , -20  , 107  , sampleRateHigh, 0, 0},
+        {"KnockSum"   , "counts", 0    , 63   , sampleRateHigh, 0, 0},
+        {"TPS"        , "%"     , 0    , 100  , sampleRateHigh, 1, 0},
+        {"APP"        , "%"     , 0    , 100  , sampleRateHigh, 1, 0},
+        {"MAP"        , "Psia"  , 0    , 58   , sampleRateHigh, 2, 0},
+        {"Baro"       , "Psia"  , 6.52 , 15.7 , sampleRateLow , 2, 0},
+        {"WGDC"       , "%"     , 0    , 100  , sampleRateHigh, 1, 0},
+        {"WGDCCorr"   , "%"     , -64  , 64   , sampleRateHigh, 1, 0},
+        {"ECT"        , "C"     , -40  , 200  , sampleRateLow , 0, 0},
+        {"IAT"        , "C"     , -40  , 200  , sampleRateLow , 0, 0},
+        {"MAT"        , "C"     , -40  , 200  , sampleRateLow , 0, 0},
+        {"Speed_ECU"  , "Km/h"  , 0    , 300  , sampleRateHigh, 1, 0},
+        {"KnockBase"  , "counts", 0    , 255  , sampleRateHigh, 0, 0},
+        {"KnockFilter", "counts", 0    , 255  , sampleRateHigh, 0, 0},
+        {"STFT"       , "%"     , -30  , 30   , sampleRateHigh, 2, 0},
+        {"LTFT"       , "%"     , -30  , 30   , sampleRateHigh, 2, 0},
+        {"LTFTIdle"   , "%"     , -30  , 30   , sampleRateHigh, 2, 0},
+        {"LTFTCruise" , "%"     , -30  , 30   , sampleRateHigh, 2, 0},
+        {"MIVInAct"   , "deg"   , -2.5 , 37.5 , sampleRateHigh, 2, 0},
+        {"MIVExAct"   , "deg"   , -37.5, 2.5  , sampleRateHigh, 2, 0},
+        {"MAFVolt"    , "V"     , 0    , 5    , sampleRateHigh, 2, 0},
+        {"LoadTiming" , "Load"  , 0    , 500  , sampleRateHigh, 1, 0},
+        {"LoadMAP"    , "Load"  , 0    , 500  , sampleRateHigh, 1, 0},
+        {"LoadIMAP"   , "Load"  , 0    , 500  , sampleRateHigh, 1, 0},
+        {"LoadMAF"    , "Load"  , 0    , 500  , sampleRateHigh, 1, 0},
+        {"LoadChosen" , "Load"  , 0    , 500  , sampleRateHigh, 1, 0},
+//        {"AFR"        , "afr"   , 7    , 23   , sampleRateHigh, 2, 0},
+    };
+    for(int i = 0; i < channel_count; i++)
+    {    chan_id[i] = create_virtual_channel(cc[i]);
+        if (INVALID_VIRTUAL_CHANNEL == chan_id[i])
+                return luaL_error(L, "Unable to create channel. "
+                                     "Maximum channels reached.");
+    }
+    chLoad        = chan_id[0];
+    chRPM         = chan_id[1];
+    chBoost       = chan_id[2];
+    chIPW         = chan_id[3];
+    chTiming      = chan_id[4];
+    chKnockSum    = chan_id[5];
+    chTPS         = chan_id[6];
+    chAPP         = chan_id[7];
+    chMAP         = chan_id[8];
+    chBaro        = chan_id[9];
+    chWGDC        = chan_id[10];
+    chWGDCCorr    = chan_id[11];
+    chECT         = chan_id[12];
+    chIAT         = chan_id[13];
+    chMAT         = chan_id[14];
+    chSpeed       = chan_id[15];
+    chKnockBase   = chan_id[16];
+    chKnockFilter = chan_id[17];
+    chSTFT        = chan_id[18];
+    chLTFT        = chan_id[19];
+    chLTFTIdle    = chan_id[20];
+    chLTFTCruise  = chan_id[21];
+    chMIVInAct    = chan_id[22];
+    chMIVExAct    = chan_id[23];
+    chMAFVolt     = chan_id[24];
+    chLoadTiming  = chan_id[25];
+    chLoadMAP     = chan_id[26];
+    chLoadIMAP    = chan_id[27];
+    chLoadMAF     = chan_id[28];
+    chLoadChosen  = chan_id[29];
+    lua_newtable(L);
+    for (int i = 0; i < channel_count; i++) {
+        lua_pushstring(L, cc[i].label);
+        lua_pushnumber(L, chan_id[i]);
+        lua_rawset(L, -3);
+    }
+    return 1;
+}
+
+void formatCANRequest(unsigned char* data, int pid, int reqLength)
+{
+    if(pid > 255) { //MODE 23
+        data[0] = 5;
+        data[1] = 0x23;
+        data[2] = pid >> 16;
+        data[3] = (pid >> 8) & 0xFF;
+        data[4] = pid & 0xFF;
+        data[5] = reqLength;
+        data[6] = 255;
+        data[7] = 255;
+    } else { //MODE 21
+        data[0] = 2;
+        data[1] = 0x21;
+        data[2] = pid;
+        data[3] = 255;
+        data[4] = 255;
+        data[5] = 255;
+        data[6] = 255;
+        data[7] = 255;
+    }
+}
+
+void pr_debug_CanData(const char *header, CAN_msg *msg)
+{
+    if (DEBUG_LEVEL) {
+        char buf[512];
+        sprintf(buf, "%s: address=%d, size=%d, data=%d,%d,%d,%d,%d,%d,%d,%d\r\n", header, msg->addressValue, msg->dataLength,
+            msg->data[0], msg->data[1], msg->data[2], msg->data[3], msg->data[4], msg->data[5], msg->data[6], msg->data[7]);
+        pr_debug(buf);
+    }
+}
+
+unsigned char req_continue[CAN_MSG_SIZE] = {48,8,0,255,255,255,255,255};
+int requestAndReadCAN_impl(unsigned char* data, int* reqLength, lua_State *L) //channel,address,isExtendedAddress,pid,reqLength,timeout
+{
+    size_t args = lua_gettop(L);
+    if (args < 5 || args > 6)
+        return incorrect_arguments(L);
+    CAN_msg tx_msg;
+    uint8_t channel = (uint8_t)lua_tointeger(L, 1);
+    tx_msg.addressValue = (unsigned int)lua_tointeger(L, 2);
+    tx_msg.isExtendedAddress = lua_tointeger(L, 3);
+    int pid = lua_tointeger(L, 4);
+    *reqLength = lua_tointeger(L, 5);
+    size_t timeout = args >= 6 ? lua_tointeger(L, 6) : DEFAULT_CAN_TIMEOUT;
+    formatCANRequest(tx_msg.data, pid, *reqLength);
+    tx_msg.dataLength = 8;
+    pr_debug_CanData("tx can data", &tx_msg);
+    int rc = CAN_tx_msg(channel, &tx_msg, timeout);
+    pr_debug_int_msg("CAN_tx_msg rc=", rc);
+    if(!rc)
+        return 0;
+
+    CAN_msg rx_msg;
+    rc = CAN_rx_msg(channel, &rx_msg, timeout);
+    pr_debug_int_msg("CAN_rx_msg rc=", rc);
+    if(!rc)
+        return 0;
+    pr_debug_CanData("rx can data", &rx_msg);
+    int offset = 2;
+    int nbMessages = 0;
+    if (rx_msg.data[0] == 0x10) { //Multimessaging
+        offset++;
+        nbMessages = (rx_msg.data[1] + 1) / 7;
+    }
+    if (pid < 256) { //Mode23 has more data
+        offset++;
+        *reqLength = rx_msg.dataLength;
+    }
+    // else
+    //     int rx_pid = msg.data[2];
+    int pos = 0;
+    for(int i = 0; i + offset < 8; i++, pos++)
+      data[pos]=rx_msg.data[i+offset];
+
+    if (nbMessages) {
+        memcpy(tx_msg.data, req_continue, CAN_MSG_SIZE);
+        pr_debug_CanData("tx can data continue", &tx_msg);
+        int rc = CAN_tx_msg(channel, &tx_msg, timeout);
+        pr_debug_int_msg("CAN_tx_msg_continue rc=", rc);
+        if(!rc)
+            return 0;
+        for(int m=0; m<nbMessages; m++) {
+            rc = CAN_rx_msg(channel, &rx_msg, timeout);
+            pr_debug_int_msg("CAN_rx_msg_continue rc=", rc);
+            if(!rc)
+                return 0;
+            pr_debug_CanData("rx can data continue", &rx_msg);
+            offset=1;
+            for(int i = 0; (i + offset < 8)&&(pos<*reqLength); i++, pos++)
+              data[pos]=rx_msg.data[i+offset];
+        }
+    }
+    return 1;
+}
+
+int Lua_requestAndReadCAN(lua_State *L) //channel,address,isExtendedAddress,pid,reqLength,timeout
+{
+    unsigned char data[CAN_MSG_SIZE * 4];
+    int reqLength;
+    if(!requestAndReadCAN_impl(data, &reqLength, L))
+        return 0;
+    lua_newtable(L);
+    for (int i = 1; i <= reqLength; i++) {
+        lua_pushnumber(L, i);
+        lua_pushnumber(L, data[i - 1]);
+        lua_rawset(L, -3);
+    }
+    return 1;
+}
+
+float get16bitsMSB(unsigned char l, unsigned char r) {
+    return (float)(((int)l)*256 + r);
+}
+
+float to_float(unsigned char c) {
+    return (float)c;
+}
+
+int Lua_requestAndReadCANAndDecodeTephraV3(lua_State *L) //channel,address,isExtendedAddress,pid,reqLength,timeout
+{
+    unsigned char data[CAN_MSG_SIZE * 4];
+    int reqLength;
+    if(!requestAndReadCAN_impl(data, &reqLength, L))
+        return 0;
+    set_virtual_channel_value(chLoad,get16bitsMSB(data[0], data[1])*10/32);
+    set_virtual_channel_value(chRPM,get16bitsMSB(data[2], data[3])*1000/256);
+    set_virtual_channel_value(chBoost,(get16bitsMSB(data[4], data[5])/4)*0.19347-14.5);
+    set_virtual_channel_value(chMIVInAct, get16bitsMSB(data[6], data[7])*(-10/512)+80);
+    set_virtual_channel_value(chMIVExAct, get16bitsMSB(data[8], data[9])*(-10/512)+80);
+    set_virtual_channel_value(chIPW,get16bitsMSB(data[10], data[11])/1000);
+    //set_virtual_channel_value(chAFR,data[12])
+    set_virtual_channel_value(chSpeed,data[13]);
+    set_virtual_channel_value(chTiming,data[14]-20);
+    set_virtual_channel_value(chKnockSum,data[15]);
+    set_virtual_channel_value(chTPS,to_float(data[16])*100.0/255.0);
+    set_virtual_channel_value(chWGDC,to_float(data[17])/2.0);
+    set_virtual_channel_value(chECT,data[18]-40);
+    set_virtual_channel_value(chMAT,data[19]-40);
+    set_virtual_channel_value(chIAT,data[20]-40);
+    set_virtual_channel_value(chSTFT,to_float(data[21])*0.1953125-25);
+    set_virtual_channel_value(chLTFT,to_float(data[22])*0.1953125-25);
+    set_virtual_channel_value(chMAFVolt,to_float(data[23])*5/255);
+    set_virtual_channel_value(chLoadMAP,get16bitsMSB(data[24], data[25])*100/16384);
+    set_virtual_channel_value(chLoadMAF,get16bitsMSB(data[26], data[27])*100/16384);
+    set_virtual_channel_value(chKnockBase,data[28]);
+    set_virtual_channel_value(chKnockFilter,data[29]);
+    return 1;
 }

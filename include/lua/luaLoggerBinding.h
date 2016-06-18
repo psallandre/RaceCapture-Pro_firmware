@@ -98,6 +98,10 @@ int Lua_FlashLoggerConfig(lua_State *L);
 int Lua_AddVirtualChannel(lua_State *L);
 int Lua_SetVirtualChannelValue(lua_State *L);
 
+int lua_AddDefaultEngineChannels(lua_State *L);
+int Lua_requestAndReadCAN(lua_State *L);
+int Lua_requestAndReadCANAndDecodeTephraV3(lua_State *L);
+
 CPP_GUARD_END
 
 #endif /*LUALOGGERBINDING_H_*/
