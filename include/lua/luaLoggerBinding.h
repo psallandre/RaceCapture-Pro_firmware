@@ -101,6 +101,7 @@ int Lua_SetVirtualChannelValue(lua_State *L);
 int lua_AddDefaultEngineChannels(lua_State *L);
 int Lua_requestAndReadCAN(lua_State *L);
 int Lua_requestAndReadCANAndDecodeTephraV3(lua_State *L);
+int Lua_set_RearO2_ChannelId(lua_State *L);
 
 CPP_GUARD_END
 

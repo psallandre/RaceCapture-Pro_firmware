@@ -180,6 +180,7 @@ void registerLuaLoggerBindings(lua_State *L)
     lua_registerlight(L, "addDefaultEngineChannels", lua_AddDefaultEngineChannels);
     lua_registerlight(L, "requestAndReadCAN", Lua_requestAndReadCAN);
     lua_registerlight(L, "requestAndReadCANAndDecodeTephraV3", Lua_requestAndReadCANAndDecodeTephraV3);
+    lua_registerlight(L, "setRearO2ChannelId", Lua_set_RearO2_ChannelId);
 }
 
 ////////////////////////////////////////////////////
@@ -921,7 +922,8 @@ int Lua_SetVirtualChannelValue(lua_State *L)
         return 0;
 }
 
-static int chan_id[30];
+#define CHANNEL_COUNT 31
+static int chan_id[CHANNEL_COUNT];
 static int chLoad        ;
 static int chRPM         ;
 static int chBoost       ;
@@ -952,15 +954,15 @@ static int chLoadMAP     ;
 static int chLoadIMAP    ;
 static int chLoadMAF     ;
 static int chLoadChosen  ;
+static int chEthanol     ;
 int lua_AddDefaultEngineChannels(lua_State *L){
     if (lua_gettop(L) != 2)
         return incorrect_arguments(L);
     unsigned short sampleRateLow = encodeSampleRate((unsigned short) lua_tointeger(L, 1));
     unsigned short sampleRateHigh = encodeSampleRate((unsigned short) lua_tointeger(L, 2));
 
-    int channel_count = 30;
     //label,units,min,max,sampleRate,precision,flags;
-    ChannelConfig cc[] ={
+    ChannelConfig cc[CHANNEL_COUNT] ={
         {"Load"       , "Load"  , 0    , 500  , sampleRateHigh, 1, 0},
         {"RPM"        , "rpm"   , 0    , 10000, sampleRateHigh, 0, 0},
         {"Boost"      , "Psig"  , -14.5, 43.5 , sampleRateHigh, 2, 0},
@@ -991,9 +993,10 @@ int lua_AddDefaultEngineChannels(lua_State *L){
         {"LoadIMAP"   , "Load"  , 0    , 500  , sampleRateHigh, 1, 0},
         {"LoadMAF"    , "Load"  , 0    , 500  , sampleRateHigh, 1, 0},
         {"LoadChosen" , "Load"  , 0    , 500  , sampleRateHigh, 1, 0},
+        {"Ethanol"    , "%"     , 0    , 100  , sampleRateLow , 1, 0},
 //        {"AFR"        , "afr"   , 7    , 23   , sampleRateHigh, 2, 0},
     };
-    for(int i = 0; i < channel_count; i++)
+    for(int i = 0; i < CHANNEL_COUNT; i++)
     {    chan_id[i] = create_virtual_channel(cc[i]);
         if (INVALID_VIRTUAL_CHANNEL == chan_id[i])
                 return luaL_error(L, "Unable to create channel. "
@@ -1029,8 +1032,9 @@ int lua_AddDefaultEngineChannels(lua_State *L){
     chLoadIMAP    = chan_id[27];
     chLoadMAF     = chan_id[28];
     chLoadChosen  = chan_id[29];
+    chEthanol     = chan_id[30];
     lua_newtable(L);
-    for (int i = 0; i < channel_count; i++) {
+    for (int i = 0; i < CHANNEL_COUNT; i++) {
         lua_pushstring(L, cc[i].label);
         lua_pushnumber(L, chan_id[i]);
         lua_rawset(L, -3);
@@ -1158,6 +1162,14 @@ float to_float(unsigned char c) {
     return (float)c;
 }
 
+static int chRearO2 = -1;
+int Lua_set_RearO2_ChannelId(lua_State *L) {
+    if (lua_gettop(L) != 1)
+        return incorrect_arguments(L);
+    chRearO2 = lua_tointeger(L, 1);
+    return 1;
+}
+
 int Lua_requestAndReadCANAndDecodeTephraV3(lua_State *L) //channel,address,isExtendedAddress,pid,reqLength,timeout
 {
     unsigned char data[CAN_MSG_SIZE * 4];
@@ -1170,7 +1182,8 @@ int Lua_requestAndReadCANAndDecodeTephraV3(lua_State *L) //channel,address,isExt
     set_virtual_channel_value(chMIVInAct, get16bitsMSB(data[6], data[7])*(-10/512)+80);
     set_virtual_channel_value(chMIVExAct, get16bitsMSB(data[8], data[9])*(-10/512)+80);
     set_virtual_channel_value(chIPW,get16bitsMSB(data[10], data[11])/1000);
-    //set_virtual_channel_value(chAFR,data[12])
+    if(chRearO2 != -1)
+        set_virtual_channel_value(chRearO2,data[12]);
     set_virtual_channel_value(chSpeed,data[13]);
     set_virtual_channel_value(chTiming,data[14]-20);
     set_virtual_channel_value(chKnockSum,data[15]);
