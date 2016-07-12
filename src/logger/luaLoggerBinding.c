@@ -178,9 +178,13 @@ void registerLuaLoggerBindings(lua_State *L)
 
     //EvoX
     lua_registerlight(L, "addDefaultEngineChannels", lua_AddDefaultEngineChannels);
-    lua_registerlight(L, "requestAndReadCAN", Lua_requestAndReadCAN);
-    lua_registerlight(L, "requestAndReadCANAndDecodeTephraV3", Lua_requestAndReadCANAndDecodeTephraV3);
+    lua_registerlight(L, "getCAN", Lua_getCAN);
     lua_registerlight(L, "setRearO2ChannelId", Lua_set_RearO2_ChannelId);
+    lua_registerlight(L, "getCAN_TephraV3", Lua_getCAN_TephraV3);
+    lua_registerlight(L, "getCAN_RAX", Lua_getCAN_RAX);
+    lua_registerlight(L, "getCAN_RAXLeftOver", Lua_getCAN_RAXLeftOver);
+    lua_registerlight(L, "getCAN_RAXLeftOverFull", Lua_getCAN_RAXLeftOverFull);
+    lua_registerlight(L, "getCAN_RAXLeftOverLTFTs", Lua_getCAN_RAXLeftOverLTFTs);
 }
 
 ////////////////////////////////////////////////////
@@ -922,7 +926,7 @@ int Lua_SetVirtualChannelValue(lua_State *L)
         return 0;
 }
 
-#define CHANNEL_COUNT 31
+#define CHANNEL_COUNT 34
 static int chan_id[CHANNEL_COUNT];
 static int chLoad        ;
 static int chRPM         ;
@@ -948,6 +952,8 @@ static int chLTFTIdle    ;
 static int chLTFTCruise  ;
 static int chMIVInAct    ;
 static int chMIVExAct    ;
+static int chMIVInTar    ;
+static int chMIVExTar    ;
 static int chMAFVolt     ;
 static int chLoadTiming  ;
 static int chLoadMAP     ;
@@ -955,9 +961,11 @@ static int chLoadIMAP    ;
 static int chLoadMAF     ;
 static int chLoadChosen  ;
 static int chEthanol     ;
+static int chAFRMap      ;
 int lua_AddDefaultEngineChannels(lua_State *L){
     if (lua_gettop(L) != 2)
         return incorrect_arguments(L);
+    // TOOD: check what if arg is nil
     unsigned short sampleRateLow = encodeSampleRate((unsigned short) lua_tointeger(L, 1));
     unsigned short sampleRateHigh = encodeSampleRate((unsigned short) lua_tointeger(L, 2));
 
@@ -987,6 +995,8 @@ int lua_AddDefaultEngineChannels(lua_State *L){
         {"LTFTCruise" , "%"     , -30  , 30   , sampleRateHigh, 2, 0},
         {"MIVInAct"   , "deg"   , -2.5 , 37.5 , sampleRateHigh, 2, 0},
         {"MIVExAct"   , "deg"   , -37.5, 2.5  , sampleRateHigh, 2, 0},
+        {"MIVInTar"   , "deg"   , -2.5 , 37.5 , sampleRateHigh, 2, 0},
+        {"MIVExTar"   , "deg"   , -37.5, 2.5  , sampleRateHigh, 2, 0},
         {"MAFVolt"    , "V"     , 0    , 5    , sampleRateHigh, 2, 0},
         {"LoadTiming" , "Load"  , 0    , 500  , sampleRateHigh, 1, 0},
         {"LoadMAP"    , "Load"  , 0    , 500  , sampleRateHigh, 1, 0},
@@ -994,7 +1004,7 @@ int lua_AddDefaultEngineChannels(lua_State *L){
         {"LoadMAF"    , "Load"  , 0    , 500  , sampleRateHigh, 1, 0},
         {"LoadChosen" , "Load"  , 0    , 500  , sampleRateHigh, 1, 0},
         {"Ethanol"    , "%"     , 0    , 100  , sampleRateLow , 1, 0},
-//        {"AFR"        , "afr"   , 7    , 23   , sampleRateHigh, 2, 0},
+        {"AFRMap"     , "afr"   , 7    , 23   , sampleRateHigh, 2, 0},
     };
     for(int i = 0; i < CHANNEL_COUNT; i++)
     {    chan_id[i] = create_virtual_channel(cc[i]);
@@ -1026,13 +1036,16 @@ int lua_AddDefaultEngineChannels(lua_State *L){
     chLTFTCruise  = chan_id[21];
     chMIVInAct    = chan_id[22];
     chMIVExAct    = chan_id[23];
-    chMAFVolt     = chan_id[24];
-    chLoadTiming  = chan_id[25];
-    chLoadMAP     = chan_id[26];
-    chLoadIMAP    = chan_id[27];
-    chLoadMAF     = chan_id[28];
-    chLoadChosen  = chan_id[29];
-    chEthanol     = chan_id[30];
+    chMIVInTar    = chan_id[24];
+    chMIVExTar    = chan_id[25];
+    chMAFVolt     = chan_id[26];
+    chLoadTiming  = chan_id[27];
+    chLoadMAP     = chan_id[28];
+    chLoadIMAP    = chan_id[29];
+    chLoadMAF     = chan_id[30];
+    chLoadChosen  = chan_id[31];
+    chEthanol     = chan_id[32];
+    chAFRMap      = chan_id[33];
     lua_newtable(L);
     for (int i = 0; i < CHANNEL_COUNT; i++) {
         lua_pushstring(L, cc[i].label);
@@ -1076,7 +1089,7 @@ void pr_debug_CanData(const char *header, CAN_msg *msg)
 }
 
 unsigned char req_continue[CAN_MSG_SIZE] = {48,8,0,255,255,255,255,255};
-int requestAndReadCAN_impl(unsigned char* data, int* reqLength, lua_State *L) //channel,address,isExtendedAddress,pid,reqLength,timeout
+int getCAN_impl(unsigned char* data, int* reqLength, lua_State *L) //channel,address,isExtendedAddress,pid,reqLength,timeout
 {
     size_t args = lua_gettop(L);
     if (args < 5 || args > 6)
@@ -1139,11 +1152,11 @@ int requestAndReadCAN_impl(unsigned char* data, int* reqLength, lua_State *L) //
     return 1;
 }
 
-int Lua_requestAndReadCAN(lua_State *L) //channel,address,isExtendedAddress,pid,reqLength,timeout
+int Lua_getCAN(lua_State *L) //channel,address,isExtendedAddress,pid,reqLength,timeout
 {
     unsigned char data[CAN_MSG_SIZE * 4];
     int reqLength;
-    if(!requestAndReadCAN_impl(data, &reqLength, L))
+    if(!getCAN_impl(data, &reqLength, L))
         return 0;
     lua_newtable(L);
     for (int i = 1; i <= reqLength; i++) {
@@ -1154,50 +1167,179 @@ int Lua_requestAndReadCAN(lua_State *L) //channel,address,isExtendedAddress,pid,
     return 1;
 }
 
-float get16bitsMSB(unsigned char l, unsigned char r) {
-    return (float)(((int)l)*256 + r);
-}
-
-float to_float(unsigned char c) {
-    return (float)c;
+float get16bitsMSB(int l, int r) {
+    return (float)((l << 8) + r);
 }
 
 static int chRearO2 = -1;
+static float rearO2Mult = 1;
+static float rearO2Add = 0;
 int Lua_set_RearO2_ChannelId(lua_State *L) {
-    if (lua_gettop(L) != 1)
+    if (lua_gettop(L) != 3)
         return incorrect_arguments(L);
     chRearO2 = lua_tointeger(L, 1);
+    rearO2Mult = (float)lua_tonumber(L, 2);
+    rearO2Add = (float)lua_tonumber(L, 3);
     return 1;
 }
 
-int Lua_requestAndReadCANAndDecodeTephraV3(lua_State *L) //channel,address,isExtendedAddress,pid,reqLength,timeout
+int Lua_getCAN_TephraV3(lua_State *L) //channel,address,isExtendedAddress,pid,reqLength,timeout
 {
     unsigned char data[CAN_MSG_SIZE * 4];
     int reqLength;
-    if(!requestAndReadCAN_impl(data, &reqLength, L))
+    if(!getCAN_impl(data, &reqLength, L))
         return 0;
     set_virtual_channel_value(chLoad,get16bitsMSB(data[0], data[1])*10/32);
     set_virtual_channel_value(chRPM,get16bitsMSB(data[2], data[3])*1000/256);
     set_virtual_channel_value(chBoost,(get16bitsMSB(data[4], data[5])/4)*0.19347-14.5);
-    set_virtual_channel_value(chMIVInAct, get16bitsMSB(data[6], data[7])*(-10/512)+80);
-    set_virtual_channel_value(chMIVExAct, get16bitsMSB(data[8], data[9])*(-10/512)+80);
+    set_virtual_channel_value(chMIVInAct, get16bitsMSB(data[6], data[7])*(-10.0/512)+80);
+    set_virtual_channel_value(chMIVExAct, get16bitsMSB(data[8], data[9])*(-10.0/512)+80);
     set_virtual_channel_value(chIPW,get16bitsMSB(data[10], data[11])/1000);
     if(chRearO2 != -1)
-        set_virtual_channel_value(chRearO2,data[12]);
+        set_virtual_channel_value(chRearO2,(float)data[12]*rearO2Mult+rearO2Add);
     set_virtual_channel_value(chSpeed,data[13]);
     set_virtual_channel_value(chTiming,data[14]-20);
     set_virtual_channel_value(chKnockSum,data[15]);
-    set_virtual_channel_value(chTPS,to_float(data[16])*100.0/255.0);
-    set_virtual_channel_value(chWGDC,to_float(data[17])/2.0);
+    set_virtual_channel_value(chTPS,(float)data[16]*100.0/255.0);
+    set_virtual_channel_value(chWGDC,(float)data[17]/2.0);
     set_virtual_channel_value(chECT,data[18]-40);
     set_virtual_channel_value(chMAT,data[19]-40);
     set_virtual_channel_value(chIAT,data[20]-40);
-    set_virtual_channel_value(chSTFT,to_float(data[21])*0.1953125-25);
-    set_virtual_channel_value(chLTFT,to_float(data[22])*0.1953125-25);
-    set_virtual_channel_value(chMAFVolt,to_float(data[23])*5/255);
+    set_virtual_channel_value(chSTFT,(float)data[21]*0.1953125-25);
+    set_virtual_channel_value(chLTFT,(float)data[22]*0.1953125-25);
+    set_virtual_channel_value(chMAFVolt,(float)data[23]*5/255);
     set_virtual_channel_value(chLoadMAP,get16bitsMSB(data[24], data[25])*100/16384);
     set_virtual_channel_value(chLoadMAF,get16bitsMSB(data[26], data[27])*100/16384);
     set_virtual_channel_value(chKnockBase,data[28]);
     set_virtual_channel_value(chKnockFilter,data[29]);
+    return 1;
+}
+
+float getFromBits(uint8_t* data, int start, int length) {
+    int shift = (8 - ((start + length) % 8)) % 8;
+    int startByte = (start - (start % 8)) / 8;
+    int bnumb = data[startByte];
+
+    if ((length + shift) > 8) {
+        bnumb = data[startByte + 1] + (bnumb << 8);
+        if ((length + shift) > 16)
+            bnumb = data[startByte + 2] + (bnumb << 8);
+    }
+    bnumb = bnumb >> shift;
+    bnumb = bnumb & ((1 << length) - 1);
+    return bnumb;
+}
+
+int Lua_getCAN_RAX(lua_State *L) //channel,address,isExtendedAddress,pid,reqLength,timeout
+{
+    unsigned char data[CAN_MSG_SIZE * 4];
+    int reqLength;
+    if(!getCAN_impl(data, &reqLength, L))
+        return 0;
+    set_virtual_channel_value(chLoad,(float)data[0]*1.5625);
+    set_virtual_channel_value(chIPW,(float)data[1]*0.1);
+    set_virtual_channel_value(chAFRMap,14.7*128/(float)data[2]);
+    set_virtual_channel_value(chRearO2,(float)data[3]);
+    set_virtual_channel_value(chSTFT,(float)data[4]*0.1953125-25);
+    set_virtual_channel_value(chLTFT,(float)data[5]*0.1953125-25);
+    set_virtual_channel_value(chLTFTIdle,(float)data[6]*0.1953125-25);
+    set_virtual_channel_value(chLTFTCruise,(float)data[7]*0.1953125-25);
+    set_virtual_channel_value(chLoadTiming,(float)data[8]*1.5625);
+    set_virtual_channel_value(chTiming,getFromBits(data,72,7)-20);
+    set_virtual_channel_value(chKnockSum,getFromBits(data,79,6));
+    set_virtual_channel_value(chRPM,getFromBits(data, 85, 11)*7.8125);
+    float map = getFromBits(data,96,9)*0.0964869; set_virtual_channel_value(chMAP, map);
+    float baro =(getFromBits(data,105,7)+90)*0.07251887; set_virtual_channel_value(chBaro, baro);
+    set_virtual_channel_value(chWGDC,(float)data[14]/2.0);
+    set_virtual_channel_value(chMAFVolt,(float)data[15]*0.019608);
+    set_virtual_channel_value(chMIVInTar,((float)data[16]-16)*0.15625);
+    set_virtual_channel_value(chMIVExTar,(16-(float)data[17])*0.15625);
+    set_virtual_channel_value(chMIVInAct, ((float)data[18]-16)*0.15625);
+    set_virtual_channel_value(chMIVExAct, (16-(float)data[19])*0.15625);
+    set_virtual_channel_value(chTPS,(float)data[20]*100.0/255.0);
+    set_virtual_channel_value(chAPP,((float)data[21]-32.0)*129.0/255.0);
+    set_virtual_channel_value(chIAT,(float)data[22]-40);
+    set_virtual_channel_value(chWGDCCorr,(float)data[23]/2-64);
+    set_virtual_channel_value(chSpeed,(float)data[24]*2);
+    //set_virtual_channel_value(chECUVolt,(float)data[25]*0.07333);
+    set_virtual_channel_value(chECT,(float)data[26]-40);
+    set_virtual_channel_value(chMAT,(float)data[27]-40);
+    set_virtual_channel_value(chLoadMAP,(float)data[28]*1.5625);
+    set_virtual_channel_value(chLoadIMAP,(float)data[29]*1.5625);
+    set_virtual_channel_value(chLoadMAF,(float)data[30]*1.5625);
+    set_virtual_channel_value(chLoadChosen,(float)data[31]*1.5625);
+    set_virtual_channel_value(chBoost,map-baro);
+    return 1;
+}
+
+int Lua_getCAN_RAXLeftOverFull(lua_State *L) //channel,address,isExtendedAddress,pid,reqLength,timeout
+{
+    unsigned char data[CAN_MSG_SIZE * 4];
+    int reqLength;
+    if(!getCAN_impl(data, &reqLength, L))
+        return 0;
+    //set_virtual_channel_value(chLoad,(float)data[0]*1.5625);
+    //set_virtual_channel_value(chIPW,(float)data[1]*0.1);
+    set_virtual_channel_value(chAFRMap,14.7*128/(float)data[2]);
+    //set_virtual_channel_value(chRearO2,(float)data[3]);
+    //set_virtual_channel_value(chSTFT,(float)data[4]*0.1953125-25);
+    //set_virtual_channel_value(chLTFT,(float)data[5]*0.1953125-25);
+    set_virtual_channel_value(chLTFTIdle,(float)data[6]*0.1953125-25);
+    set_virtual_channel_value(chLTFTCruise,(float)data[7]*0.1953125-25);
+    //set_virtual_channel_value(chLoadTiming,(float)data[8]*1.5625);
+    //set_virtual_channel_value(chTiming,getFromBits(data,72,7)-20);
+    //set_virtual_channel_value(chKnockSum,getFromBits(data,79,6));
+    //set_virtual_channel_value(chRPM,getFromBits(data, 85, 11)*7.8125);
+    float map = getFromBits(data,96,9)*0.0964869; set_virtual_channel_value(chMAP, map);
+    float baro =(getFromBits(data,105,7)+90)*0.07251887; set_virtual_channel_value(chBaro, baro);
+    //set_virtual_channel_value(chWGDC,(float)data[14]/2.0);
+    //set_virtual_channel_value(chMAFVolt,(float)data[15]*0.019608);
+    set_virtual_channel_value(chMIVInTar,((float)data[16]-16)*0.15625);
+    set_virtual_channel_value(chMIVExTar,(16-(float)data[17])*0.15625);
+    //set_virtual_channel_value(chMIVInAct, ((float)data[18]-16)*0.15625);
+    //set_virtual_channel_value(chMIVExAct, (16-(float)data[19])*0.15625);
+    //set_virtual_channel_value(chTPS,(float)data[20]*100.0/255.0);
+    set_virtual_channel_value(chAPP,((float)data[21]-32.0)*129.0/255.0);
+    //set_virtual_channel_value(chIAT,(float)data[22]-40);
+    //set_virtual_channel_value(chWGDCCorr,(float)data[23]/2-64);
+    //set_virtual_channel_value(chSpeed,(float)data[24]*2);
+    //set_virtual_channel_value(chECUVolt,(float)data[25]*0.07333);
+    //set_virtual_channel_value(chECT,(float)data[26]-40);
+    //set_virtual_channel_value(chMAT,(float)data[27]-40);
+    //set_virtual_channel_value(chLoadMAP,(float)data[28]*1.5625);
+    set_virtual_channel_value(chLoadIMAP,(float)data[29]*1.5625);
+    //set_virtual_channel_value(chLoadMAF,(float)data[30]*1.5625);
+    set_virtual_channel_value(chLoadChosen,(float)data[31]*1.5625);
+    //set_virtual_channel_value(chBoost,map-baro);
+    return 1;
+}
+
+int Lua_getCAN_RAXLeftOver(lua_State *L) //channel,address,isExtendedAddress,pid,reqLength,timeout
+{
+    unsigned char data[CAN_MSG_SIZE * 4];
+    int reqLength;
+    if(!getCAN_impl(data, &reqLength, L))
+        return 0;
+    float map = getFromBits(data,0,9)*0.0964869; set_virtual_channel_value(chMAP, map);
+    float baro =(getFromBits(data,9,7)+90)*0.07251887; set_virtual_channel_value(chBaro, baro);
+    set_virtual_channel_value(chAPP,((float)data[9]-32.0)*129.0/255.0);
+    set_virtual_channel_value(chLoadIMAP,(float)data[17]*1.5625);
+    set_virtual_channel_value(chLoadChosen,(float)data[19]*1.5625);
+    return 1;
+}
+
+int Lua_getCAN_RAXLeftOverLTFTs(lua_State *L) //channel,address,isExtendedAddress,pid,reqLength,timeout
+{
+    unsigned char data[CAN_MSG_SIZE * 4];
+    int reqLength;
+    if(!getCAN_impl(data, &reqLength, L))
+        return 0;
+    set_virtual_channel_value(chLTFTIdle,(float)data[0]*0.1953125-25);
+    set_virtual_channel_value(chLTFTCruise,(float)data[1]*0.1953125-25);
+    float map = getFromBits(data,48,9)*0.0964869; set_virtual_channel_value(chMAP, map);
+    float baro =(getFromBits(data,57,7)+90)*0.07251887; set_virtual_channel_value(chBaro, baro);
+    set_virtual_channel_value(chAPP,((float)data[15]-32.0)*129.0/255.0);
+    set_virtual_channel_value(chLoadIMAP,(float)data[23]*1.5625);
+    set_virtual_channel_value(chLoadChosen,(float)data[25]*1.5625);
     return 1;
 }

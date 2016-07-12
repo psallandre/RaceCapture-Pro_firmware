@@ -99,9 +99,13 @@ int Lua_AddVirtualChannel(lua_State *L);
 int Lua_SetVirtualChannelValue(lua_State *L);
 
 int lua_AddDefaultEngineChannels(lua_State *L);
-int Lua_requestAndReadCAN(lua_State *L);
-int Lua_requestAndReadCANAndDecodeTephraV3(lua_State *L);
+int Lua_getCAN(lua_State *L);
 int Lua_set_RearO2_ChannelId(lua_State *L);
+int Lua_getCAN_TephraV3(lua_State *L);
+int Lua_getCAN_RAX(lua_State *L);
+int Lua_getCAN_RAXLeftOver(lua_State *L);
+int Lua_getCAN_RAXLeftOverFull(lua_State *L);
+int Lua_getCAN_RAXLeftOverLTFTs(lua_State *L);
 
 CPP_GUARD_END
 
