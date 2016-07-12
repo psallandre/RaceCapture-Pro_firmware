@@ -42,6 +42,7 @@ NM      := $(PREFIX)-nm
 OBJCOPY := $(PREFIX)-objcopy
 OBJDUMP := $(PREFIX)-objdump
 SIZE    := $(PREFIX)-size
+LD      := $(PREFIX)-ld
 
 OPENOCD := openocd
 DDD     := ddd
